@@ -140,20 +140,20 @@ We can compare `EVTYPE` against injuries and fatalities.
 injuries <- storm %>%
   group_by(EVTYPE) %>%
   summarise(
-    avg_injuries = mean(INJURIES, na.rm = TRUE)
+    sum_injuries = sum(INJURIES, na.rm = TRUE)
   ) %>%
-  arrange(desc(avg_injuries)) %>%
-  mutate(EVTYPE = fct_reorder(EVTYPE, avg_injuries)) %>%
+  arrange(desc(sum_injuries)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, sum_injuries)) %>%
   head(5)
 
 ### Storm events with the top 5 highest average fatalities
 fatalities <- storm %>%
   group_by(EVTYPE) %>%
   summarise(
-    avg_fatalities = mean(FATALITIES, na.rm = TRUE)
+    sum_fatalities = sum(FATALITIES, na.rm = TRUE)
   ) %>%
-  arrange(desc(avg_fatalities)) %>%
-  mutate(EVTYPE = fct_reorder(EVTYPE, avg_fatalities)) %>%
+  arrange(desc(sum_fatalities)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, sum_fatalities)) %>%
   head(5)
 
 ### Take the set union of the top 5 storm events from the two categories above (average injuries and average fatalities)
@@ -164,17 +164,17 @@ combined_df <- storm %>%
   filter(EVTYPE %in% combined) %>%
   group_by(EVTYPE) %>%
   summarise(
-    avg_injuries = mean(INJURIES, na.rm = TRUE),
-    avg_fatalities = mean(FATALITIES, na.rm = TRUE),
-    sum_avg = avg_injuries + avg_fatalities
+    sum_injuries = sum(INJURIES, na.rm = TRUE),
+    sum_fatalities = sum(FATALITIES, na.rm = TRUE),
+    sum_total_combined = sum_injuries + sum_fatalities
   ) %>%
-  arrange(desc(sum_avg)) %>%
-  mutate(EVTYPE = fct_reorder(EVTYPE, sum_avg))
+  arrange(desc(sum_total_combined)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, sum_total_combined))
 
 ### Pivot to a longer format
 combined_df_longer = combined_df %>%
   pivot_longer(
-    cols = avg_injuries:sum_avg,
+    cols = sum_injuries:sum_total_combined,
     names_to = "harm_type",
     values_to = "count"
   )
@@ -203,19 +203,19 @@ We can compare `EVTYPE` against property and crop damage.
 ### Top 5 property damage by EVTYPE
 prop_dmg <- storm %>%
   group_by(EVTYPE) %>%
-  summarise(avg_property_dmg = mean(PROPDMG, na.rm = TRUE)) %>%
-  arrange(desc(avg_property_dmg)) %>%
-  mutate(EVTYPE = fct_reorder(EVTYPE, avg_property_dmg)) %>%
+  summarise(sum_property_dmg = sum(PROPDMG, na.rm = TRUE)) %>%
+  arrange(desc(sum_property_dmg)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, sum_property_dmg)) %>%
   head(5)
 
 ### Top 5 crop damage by EVTYPE
 crop_dmg <- storm %>% 
   group_by(EVTYPE) %>%
   summarise(
-    avg_crop_dmg = mean(CROPDMG, na.rm = TRUE)
+    sum_crop_dmg = sum(CROPDMG, na.rm = TRUE)
   ) %>%
-  arrange(desc(avg_crop_dmg)) %>%
-  mutate(EVTYPE = fct_reorder(EVTYPE, avg_crop_dmg)) %>%
+  arrange(desc(sum_crop_dmg)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, sum_crop_dmg)) %>%
   head(5)
 
 ### Get union of top 5 EVTYPEs by Property damage and Crop damage
@@ -226,24 +226,24 @@ combined_df <- storm %>%
   filter(EVTYPE %in% combined) %>%
   group_by(EVTYPE) %>%
   summarise(
-    avg_property_dmg = mean(PROPDMG, na.rm = TRUE),
-    avg_crop_dmg = mean(CROPDMG, na.rm = TRUE),
-    sum_avg = avg_property_dmg + avg_crop_dmg
+    sum_property_dmg = sum(PROPDMG, na.rm = TRUE),
+    sum_crop_dmg = sum(CROPDMG, na.rm = TRUE),
+    sum_total_combined = sum_property_dmg + sum_crop_dmg
   ) %>%
-  arrange(desc(sum_avg)) %>%
-  mutate(EVTYPE = fct_reorder(EVTYPE, sum_avg))
+  arrange(desc(sum_total_combined)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, sum_total_combined))
 
 ### Pivot longer
 combined_df_longer = combined_df %>%
   pivot_longer(
-    cols = avg_property_dmg:sum_avg,
+    cols = sum_property_dmg:sum_total_combined,
     names_to = "damage_type",
     values_to = "dollars"
   )
 
 ### Plot economic damage effects for property, crops, and sum(property, crops)
 p1 <- ggplot(combined_df_longer, aes(x = EVTYPE, y = dollars)) + 
-  geom_bar(stat = "identity") + 
+  geom_col() +
   labs(
     title = "Economic Damages by Storm Type",
     x = "Storm Type",
@@ -253,23 +253,8 @@ p1 <- ggplot(combined_df_longer, aes(x = EVTYPE, y = dollars)) +
   theme_bw() + 
   facet_wrap(~damage_type)
 
-### Remove "hurricane" because it is an outlier in order to see the other storm types better. Also remove "drought" since it is so small it does not appear on the plot
-combined_df_longer_no_h <- combined_df_longer %>%
-  filter(EVTYPE != "hurricane" & EVTYPE != "drought")
-
-### Plot economic damage again with outliers removed, to see the other storm types better
-p2 <- ggplot(combined_df_longer_no_h, aes(x = EVTYPE, y = dollars)) + 
-  geom_bar(stat = "identity") + 
-    labs(
-    x = "Storm Type",
-    y = "Dollars"
-  ) +
-  coord_flip() +
-  theme_bw() + 
-  facet_wrap(~damage_type)
-
-### Display the plots in a plot grid
-plot_grid(p1, p2, nrow = 2)
+### Display the plot
+p1
 ```
 
 We can see that Hurricane leads both in terms of property damage and crop damage. The lead it has for property damage is massive, where as less so for crop damage. After hurricanes, flood and surf have the next largest property damage, followed by tornado and fire. The main contributors to crop damage after hurricanes are flood and cold. In general, the economic losses from crop damage are much less than the economic losses from property damage. 
@@ -281,14 +266,14 @@ We might also be interested in seeing the overall trend over time of population 
 economic_dmg_time <- storm %>%
   group_by(BGN_YEAR) %>%
   summarise(
-    avg_prop_dmg = mean(PROPDMG, na.rm = TRUE),
-    avg_crop_dmg = mean(CROPDMG, na.rm = TRUE),
+    sum_prop_dmg = sum(PROPDMG, na.rm = TRUE),
+    sum_crop_dmg = sum(CROPDMG, na.rm = TRUE),
   )
 
 ### pivot longer
 economic_dmg_time <- economic_dmg_time %>%
   pivot_longer(
-    cols = c(avg_prop_dmg, avg_crop_dmg),
+    cols = c(sum_prop_dmg, sum_crop_dmg),
     names_to = "damage_type",
     values_to = "dollars"
   )
@@ -308,14 +293,14 @@ p1 <- ggplot(economic_dmg_time,
 harm_time <- storm %>%
   group_by(BGN_YEAR) %>%
   summarise(
-    avg_injuries = mean(INJURIES, na.rm = TRUE),
-    avg_fatalities = mean(FATALITIES, na.rm = TRUE),
+    sum_injuries = sum(INJURIES, na.rm = TRUE),
+    sum_fatalities = sum(FATALITIES, na.rm = TRUE),
   )
 
 ### Pivot longer
 harm_time <- harm_time %>% 
   pivot_longer(
-    cols = c(avg_injuries, avg_fatalities),
+    cols = c(sum_injuries, sum_fatalities),
     names_to = "harm_type",
     values_to = "count"
   )
@@ -336,3 +321,5 @@ plot_grid(p2, p1, nrow = 2)
 ```
 
 In terms of population health effects, the number of injuries for all storm events on average has fallen from about 1 to about 0 over the years, whereas the number of fatalities on average has remained close to 0. There is an especially high instance of average injury rate at about 1998. As far as economic damages, there is a very slight decrease in property damage from storms over time. There are a couple of years around 2005 with high average property damage from storm events. Crop damages have decreased more over the years.
+
+This completes the report.
