@@ -192,7 +192,7 @@ ggplot(combined_df_longer, aes(x = EVTYPE, y = count)) +
   facet_wrap(~harm_type)
 ```
 
-Hurricanes is at the top spot for both average injuries and average fatalities, although it has a much larger lead compared to the others for average injuries. Heat, tornado, and tropical storm are the runners up when it comes to average injuries, whereas avalanche, heat, and surf are runners up when it comes to average fatalities. Avalaches stand out because they are the only one that have a higher number of fatalities than injuries on average.
+Tornado is at the top spot for both number of injuries and fatalities, although it has a larger lead compared to the others for injuries. Flood, cold, and heat are the runners up when it comes to numbers of injuries, whereas Flood and heat are runners up when it comes to number of fatalities.
 
 To answer question 2:
 
@@ -257,7 +257,7 @@ p1 <- ggplot(combined_df_longer, aes(x = EVTYPE, y = dollars)) +
 p1
 ```
 
-We can see that Hurricane leads both in terms of property damage and crop damage. The lead it has for property damage is massive, where as less so for crop damage. After hurricanes, flood and surf have the next largest property damage, followed by tornado and fire. The main contributors to crop damage after hurricanes are flood and cold. In general, the economic losses from crop damage are much less than the economic losses from property damage. 
+We can see that flood leads both in terms of property damage and crop damage. The lead it has for property damage is large, where as less so for crop damage. After flood, hurricane and tornado have the next largest property damage, followed by hail and surf. The main contributors to crop damage after flood are cold and hurricane. In general, the economic losses from crop damage are less than the economic losses from property damage. 
 
 We might also be interested in seeing the overall trend over time of population health effects and economic damages from all storm events combined. I have plotted that below.
 
@@ -320,6 +320,4 @@ p2 <- ggplot(harm_time,
 plot_grid(p2, p1, nrow = 2)
 ```
 
-In terms of population health effects, the number of injuries for all storm events on average has fallen from about 1 to about 0 over the years, whereas the number of fatalities on average has remained close to 0. There is an especially high instance of average injury rate at about 1998. As far as economic damages, there is a very slight decrease in property damage from storms over time. There are a couple of years around 2005 with high average property damage from storm events. Crop damages have decreased more over the years.
-
-This completes the report.
+In terms of population health effects, the number of injuries for all storm events has increased, whereas the number of fatalities has remained steady. There is an especially high instance of injury at about 1996 and 2013. As far as economic damages, there is an increase in property damage from storms over time. There is a marked increase for the year 2006. Crop damages have been steady but decreased slightly.
