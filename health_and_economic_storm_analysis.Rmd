@@ -1,0 +1,338 @@
+---
+title: "Analysis of Health and Economic Consequences of Storm Events"
+output: html_document
+---
+
+**Synopsis:** This is an analysis that uses the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database to attempt to answer the following two questions
+
+1) Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+    
+
+2) Across the United States, which types of events have the greatest economic consequences?
+
+# Data Processing
+Load required libraries
+```{r}
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(ggplot2)
+library(cowplot)
+library(forcats)
+library(tidyverse)
+```
+
+
+Read the data into R and run `str()` to get a sense of the data.
+```{r}
+storm <- read.csv("repdata_data_StormData.csv")
+str(storm)
+```
+We can see that there is already a `BGN_TIME` column, so we can remove the "0:00:00" part from the `BGN_DATE` column. We can do the same thing for `END_DATE` as well. Also create a new column containing just the year so we can make a time-series plot later.
+```{r}
+storm = storm %>%
+  ### Extract only the first part of the string for BGN_DATE and END_DATE columns
+  mutate(
+    BGN_DATE = str_extract(BGN_DATE, pattern = "^[^ ]+"),
+    END_DATE = str_extract(END_DATE, pattern = "^[^ ]+")
+         ) %>%
+  ### Convert date columns to date class and create new column containing the year
+  mutate(
+    BGN_DATE = mdy(BGN_DATE),
+    END_DATE = mdy(END_DATE),
+    BGN_YEAR = year(BGN_DATE)
+    )
+```
+
+For the character variables, we will convert any empty strings to `NA`. Also, we will convert `EVTYPE` to a factor variable since that will be used later in our plots.
+```{r}
+storm = storm %>%
+  mutate(
+    across(where(is.character), ~na_if(., "")), ### convert empty strings to NA
+    EVTYPE = as.factor(EVTYPE) ### convert EVTYPE to factor
+  )
+```
+
+Now lets take a closer look at the `PROPDMGEXP` and `CROPDMGEXP` variables
+```{r}
+levels(as.factor(storm$PROPDMGEXP))
+levels(as.factor(storm$CROPDMGEXP))
+```
+
+It seems that these are units including units for hundreds, thousands, millions, and billions. I will recode the `PROPDMG` and `CROPDMG` to be in dollars instead
+```{r}
+storm = storm %>%
+  mutate(
+    PROPDMGEXP = tolower(PROPDMGEXP), ### convert to lower case
+    PROPDMGEXP = case_when(
+      PROPDMGEXP == "h" ~ "2", ### hundreds
+      PROPDMGEXP == "k" ~ "3", ### thousands
+      PROPDMGEXP == "m" ~ "6", ### millions
+      PROPDMGEXP == "b" ~ "9", ### billions
+      TRUE ~ PROPDMGEXP
+    )
+  ) %>%
+  mutate(
+    CROPDMGEXP = tolower(CROPDMGEXP), ### convert to lower case
+    CROPDMGEXP = case_when(
+      CROPDMGEXP == "h" ~ "2", ### hundreds
+      CROPDMGEXP == "k" ~ "3", ### thousands
+      CROPDMGEXP == "m" ~ "6", ### millions
+      CROPDMGEXP == "b" ~ "9", ### billions
+      TRUE ~ CROPDMGEXP
+    )
+  ) %>%
+  mutate(
+    PROPDMGEXP = as.numeric(PROPDMGEXP), ### convert to numeric
+    CROPDMGEXP = as.numeric(CROPDMGEXP)  ### convert to numeric
+  ) %>%
+  filter(!is.na(PROPDMGEXP)) %>% ### filter out any rows with missing exponents
+  filter(!is.na(CROPDMGEXP)) %>% ### filter out any rows with missing exponents
+  mutate(
+    PROPDMG = PROPDMG * 10^PROPDMGEXP, ### recode PROPDMG and CROPDMG in dollars
+    CROPDMG = CROPDMG * 10^CROPDMGEXP     
+         )
+```
+
+Lets take a closer look at the `EVTYPE` variable
+```{r}
+levels(as.factor(storm$EVTYPE))
+```
+
+We can see that there are some repeated `EVTYPE`s due to case sensitivity, and some inconsistent naming conventions. We will convert everything to lower case, then use `stringr` to identify `EVTYPE`s that are the same type of weather event and combine them into a consistent naming convention.
+```{r}
+### Convert everything to lower case
+storm = storm %>%
+  mutate(
+    EVTYPE = tolower(EVTYPE)
+  )
+
+### Identify EVTYPEs that are the same and recode them to have a consistent naming convention
+storm <- storm %>%
+  mutate(EVTYPE = case_when(
+    str_detect(EVTYPE, "hurricane") ~ "hurricane",
+    str_detect(EVTYPE, "tropical storm|tropical depression") ~ "tropical storm",
+    str_detect(EVTYPE, "flood|fld") ~ "flood",
+    str_detect(EVTYPE, "thunderstorm") ~ "thunderstorm",
+    str_detect(EVTYPE, "fire") ~ "fire",
+    str_detect(EVTYPE, "tornado") ~ "tornado",
+    str_detect(EVTYPE, "rain") ~ "rain",
+    str_detect(EVTYPE, "heat") ~ "heat",
+    str_detect(EVTYPE, "wind|funnel cloud|gustnado") ~ "wind",
+    str_detect(EVTYPE, "wintry mix") ~ "wintry mix",  # Explicitly categorize it
+    str_detect(EVTYPE, "ice|freez|winter|snow|blizzard|cold|icy") ~ "cold",
+    str_detect(EVTYPE, "hail|sleet") ~ "hail",
+    str_detect(EVTYPE, "surf|tsunami|storm surge|waterspout|rip current|seiche") ~ "surf",
+    str_detect(EVTYPE, "fog") ~ "fog",
+    str_detect(EVTYPE, "dust") ~ "dust",
+    TRUE ~ EVTYPE  # Retain original if no match
+  ))
+```
+
+# Results
+To answer question 1:
+
+> 1) Across the United States, which types of events (as indicated in the `EVTYPE` variable) are most harmful with respect to population health?
+
+We can compare `EVTYPE` against injuries and fatalities.
+```{r}
+### Storm events with the top 5 highest average injuries
+injuries <- storm %>%
+  group_by(EVTYPE) %>%
+  summarise(
+    avg_injuries = mean(INJURIES, na.rm = TRUE)
+  ) %>%
+  arrange(desc(avg_injuries)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, avg_injuries)) %>%
+  head(5)
+
+### Storm events with the top 5 highest average fatalities
+fatalities <- storm %>%
+  group_by(EVTYPE) %>%
+  summarise(
+    avg_fatalities = mean(FATALITIES, na.rm = TRUE)
+  ) %>%
+  arrange(desc(avg_fatalities)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, avg_fatalities)) %>%
+  head(5)
+
+### Take the set union of the top 5 storm events from the two categories above (average injuries and average fatalities)
+combined <- unique(union(injuries$EVTYPE, fatalities$EVTYPE))
+
+### Filter `s` dataframe for the combined storm events taken above, then calculate the avg injuries, fatalities, and the sum of those (which I call harm_index) and arrange descending by harm_index
+combined_df <- storm %>%
+  filter(EVTYPE %in% combined) %>%
+  group_by(EVTYPE) %>%
+  summarise(
+    avg_injuries = mean(INJURIES, na.rm = TRUE),
+    avg_fatalities = mean(FATALITIES, na.rm = TRUE),
+    sum_avg = avg_injuries + avg_fatalities
+  ) %>%
+  arrange(desc(sum_avg)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, sum_avg))
+
+### Pivot to a longer format
+combined_df_longer = combined_df %>%
+  pivot_longer(
+    cols = avg_injuries:sum_avg,
+    names_to = "harm_type",
+    values_to = "count"
+  )
+
+### Plot bar charts and facet by harm_type to see bar charts for avg injuries, fatalities, and harm_index, and how they compare
+ggplot(combined_df_longer, aes(x = EVTYPE, y = count)) + 
+  geom_col() + 
+  theme_bw() + 
+  labs(
+    title = "Population Health Impacts of Storm Events",
+    x = "Storm Type",
+    y = "Number of Injuries/Fatalities"
+  ) +
+  coord_flip() + 
+  facet_wrap(~harm_type)
+```
+
+Hurricanes is at the top spot for both average injuries and average fatalities, although it has a much larger lead compared to the others for average injuries. Heat, tornado, and tropical storm are the runners up when it comes to average injuries, whereas avalanche, heat, and surf are runners up when it comes to average fatalities. Avalaches stand out because they are the only one that have a higher number of fatalities than injuries on average.
+
+To answer question 2:
+
+> 2) Across the United States, which types of events have the greatest economic consequences?
+
+We can compare `EVTYPE` against property and crop damage.
+```{r}
+### Top 5 property damage by EVTYPE
+prop_dmg <- storm %>%
+  group_by(EVTYPE) %>%
+  summarise(avg_property_dmg = mean(PROPDMG, na.rm = TRUE)) %>%
+  arrange(desc(avg_property_dmg)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, avg_property_dmg)) %>%
+  head(5)
+
+### Top 5 crop damage by EVTYPE
+crop_dmg <- storm %>% 
+  group_by(EVTYPE) %>%
+  summarise(
+    avg_crop_dmg = mean(CROPDMG, na.rm = TRUE)
+  ) %>%
+  arrange(desc(avg_crop_dmg)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, avg_crop_dmg)) %>%
+  head(5)
+
+### Get union of top 5 EVTYPEs by Property damage and Crop damage
+combined <- unique(union(prop_dmg$EVTYPE, crop_dmg$EVTYPE))
+
+### Filter `s` dataframe for the combined storm events taken above, then calculate the avg property damage, crop damage, and the sum of those (which I call sum_avg) and arrange descending by sum_avg
+combined_df <- storm %>%
+  filter(EVTYPE %in% combined) %>%
+  group_by(EVTYPE) %>%
+  summarise(
+    avg_property_dmg = mean(PROPDMG, na.rm = TRUE),
+    avg_crop_dmg = mean(CROPDMG, na.rm = TRUE),
+    sum_avg = avg_property_dmg + avg_crop_dmg
+  ) %>%
+  arrange(desc(sum_avg)) %>%
+  mutate(EVTYPE = fct_reorder(EVTYPE, sum_avg))
+
+### Pivot longer
+combined_df_longer = combined_df %>%
+  pivot_longer(
+    cols = avg_property_dmg:sum_avg,
+    names_to = "damage_type",
+    values_to = "dollars"
+  )
+
+### Plot economic damage effects for property, crops, and sum(property, crops)
+p1 <- ggplot(combined_df_longer, aes(x = EVTYPE, y = dollars)) + 
+  geom_bar(stat = "identity") + 
+  labs(
+    title = "Economic Damages by Storm Type",
+    x = "Storm Type",
+    y = "Dollars"
+  ) +
+  coord_flip() +
+  theme_bw() + 
+  facet_wrap(~damage_type)
+
+### Remove "hurricane" because it is an outlier in order to see the other storm types better. Also remove "drought" since it is so small it does not appear on the plot
+combined_df_longer_no_h <- combined_df_longer %>%
+  filter(EVTYPE != "hurricane" & EVTYPE != "drought")
+
+### Plot economic damage again with outliers removed, to see the other storm types better
+p2 <- ggplot(combined_df_longer_no_h, aes(x = EVTYPE, y = dollars)) + 
+  geom_bar(stat = "identity") + 
+    labs(
+    x = "Storm Type",
+    y = "Dollars"
+  ) +
+  coord_flip() +
+  theme_bw() + 
+  facet_wrap(~damage_type)
+
+### Display the plots in a plot grid
+plot_grid(p1, p2, nrow = 2)
+```
+
+We can see that Hurricane leads both in terms of property damage and crop damage. The lead it has for property damage is massive, where as less so for crop damage. After hurricanes, flood and surf have the next largest property damage, followed by tornado and fire. The main contributors to crop damage after hurricanes are flood and cold. In general, the economic losses from crop damage are much less than the economic losses from property damage. 
+
+We might also be interested in seeing the overall trend over time of population health effects and economic damages from all storm events combined. I have plotted that below.
+
+```{r}
+### Average property damage and crop damage by year
+economic_dmg_time <- storm %>%
+  group_by(BGN_YEAR) %>%
+  summarise(
+    avg_prop_dmg = mean(PROPDMG, na.rm = TRUE),
+    avg_crop_dmg = mean(CROPDMG, na.rm = TRUE),
+  )
+
+### pivot longer
+economic_dmg_time <- economic_dmg_time %>%
+  pivot_longer(
+    cols = c(avg_prop_dmg, avg_crop_dmg),
+    names_to = "damage_type",
+    values_to = "dollars"
+  )
+
+### Plot economic damage over time for all storm types combined
+p1 <- ggplot(economic_dmg_time, 
+       aes(x = BGN_YEAR, y = dollars, colour = damage_type)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  labs(
+    title = "Economic Damages Over Time",
+    x = "Year",
+    y = "Dollars"
+  )
+
+### Average injuries and fatalities by year
+harm_time <- storm %>%
+  group_by(BGN_YEAR) %>%
+  summarise(
+    avg_injuries = mean(INJURIES, na.rm = TRUE),
+    avg_fatalities = mean(FATALITIES, na.rm = TRUE),
+  )
+
+### Pivot longer
+harm_time <- harm_time %>% 
+  pivot_longer(
+    cols = c(avg_injuries, avg_fatalities),
+    names_to = "harm_type",
+    values_to = "count"
+  )
+
+### Plot population health effects over time for all storm types combined
+p2 <- ggplot(harm_time, 
+       aes(x = BGN_YEAR, y = count, colour = harm_type)) + 
+  geom_point() + 
+  geom_smooth(method = "lm") + 
+  labs(
+    title = "Population Health Impacts Over time",
+    x = "Year",
+    y = "Number of Injuries/Fatalities"
+  )
+
+### Display the plots in a grid
+plot_grid(p2, p1, nrow = 2)
+```
+
+In terms of population health effects, the number of injuries for all storm events on average has fallen from about 1 to about 0 over the years, whereas the number of fatalities on average has remained close to 0. There is an especially high instance of average injury rate at about 1998. As far as economic damages, there is a very slight decrease in property damage from storms over time. There are a couple of years around 2005 with high average property damage from storm events. Crop damages have decreased more over the years.
